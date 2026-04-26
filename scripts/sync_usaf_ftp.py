@@ -115,11 +115,11 @@ def main():
 
     # --- TIRES (10 brands in parallel) ---
     print(f"Pulling {len(TIRE_BRANDS)} tire brands (parallel)...", flush=True)
-    results = pull_all('tires', 'Tires', TIRE_BRANDS, 'Tire', workers=10)
+    results = pull_all('tires', 'Tires', TIRE_BRANDS, 'Tire', workers=5)
 
-    # --- WHEELS (10 brands in parallel) ---
+    # --- WHEELS (5 brands in parallel) ---
     print(f"Pulling {len(WHEEL_BRANDS)} wheel brands (parallel)...", flush=True)
-    results += pull_all('wheels', 'Wheels', WHEEL_BRANDS, 'Wheel', workers=10)
+    results += pull_all('wheels', 'Wheels', WHEEL_BRANDS, 'Wheel', workers=5)
 
     if not results:
         print("No items found. Aborting.")
