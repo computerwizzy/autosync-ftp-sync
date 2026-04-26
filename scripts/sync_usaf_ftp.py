@@ -63,7 +63,7 @@ def crawl(endpoint, json_key, brand):
     offset = 0
     while True:
         data = fetch(endpoint, {
-            'limit': 10, 'offset': offset,
+            'limit': 100, 'offset': offset,
             'f-brand': brand, 'i-inventory': 'true', 'i-price': 'true'
         })
         if not data or json_key not in data or not data[json_key]:
@@ -71,7 +71,7 @@ def crawl(endpoint, json_key, brand):
         items.extend(data[json_key])
         if not data.get('MoreItems', False):
             break
-        offset += 10
+        offset += 100
     return items
 
 
