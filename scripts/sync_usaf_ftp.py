@@ -3,6 +3,7 @@ import csv
 import os
 import ftplib
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -63,7 +64,7 @@ def crawl(endpoint, json_key, brand):
     offset = 0
     while True:
         data = fetch(endpoint, {
-            'limit': 250, 'offset': offset,
+            'limit': 10, 'offset': offset,
             'f-brand': brand, 'i-inventory': 'true', 'i-price': 'true'
         })
         if not data or json_key not in data or not data[json_key]:
@@ -71,8 +72,38 @@ def crawl(endpoint, json_key, brand):
         items.extend(data[json_key])
         if not data.get('MoreItems', False):
             break
-        offset += 250
-    return items
+        offset += 10
+    return brand, items
+
+
+def pull_all(endpoint, json_key, brands, item_type, workers=10):
+    results = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(crawl, endpoint, json_key, brand): brand for brand in brands}
+        for future in as_completed(futures):
+            brand, items = future.result()
+            if items:
+                print(f"  {brand}: {len(items)}", flush=True)
+                for item in items:
+                    if item_type == 'Tire':
+                        results.append({
+                            'Type': 'Tire',
+                            'Brand': item.get('Brand', brand),
+                            'Model': item.get('Model', ''),
+                            'PartNumber': item.get('PartNumber', ''),
+                            'Price': f"{float(item.get('Price') or 0):.2f}",
+                            'Inventory': item.get('Inventory', 0)
+                        })
+                    else:
+                        results.append({
+                            'Type': 'Wheel',
+                            'Brand': item.get('Brand', brand),
+                            'Model': item.get('Model', ''),
+                            'PartNumber': item.get('Pn', ''),
+                            'Price': f"{float(item.get('Price') or 0):.2f}",
+                            'Inventory': item.get('Inventory', 0)
+                        })
+    return results
 
 
 def main():
@@ -81,39 +112,14 @@ def main():
         return
 
     print("=== AutoSync FTP Inventory Sync ===")
-    results = []
 
-    # --- TIRES ---
-    print(f"Pulling {len(TIRE_BRANDS)} tire brands...", flush=True)
-    for brand in TIRE_BRANDS:
-        items = crawl('tires', 'Tires', brand)
-        if items:
-            print(f"  {brand}: {len(items)}", flush=True)
-            for t in items:
-                results.append({
-                    'Type': 'Tire',
-                    'Brand': t.get('Brand', brand),
-                    'Model': t.get('Model', ''),
-                    'PartNumber': t.get('PartNumber', ''),
-                    'Price': f"{float(t.get('Price') or 0):.2f}",
-                    'Inventory': t.get('Inventory', 0)
-                })
+    # --- TIRES (10 brands in parallel) ---
+    print(f"Pulling {len(TIRE_BRANDS)} tire brands (parallel)...", flush=True)
+    results = pull_all('tires', 'Tires', TIRE_BRANDS, 'Tire', workers=10)
 
-    # --- WHEELS ---
-    print(f"Pulling {len(WHEEL_BRANDS)} wheel brands...", flush=True)
-    for brand in WHEEL_BRANDS:
-        items = crawl('wheels', 'Wheels', brand)
-        if items:
-            print(f"  {brand}: {len(items)}", flush=True)
-            for w in items:
-                results.append({
-                    'Type': 'Wheel',
-                    'Brand': w.get('Brand', brand),
-                    'Model': w.get('Model', ''),
-                    'PartNumber': w.get('Pn', ''),
-                    'Price': f"{float(w.get('Price') or 0):.2f}",
-                    'Inventory': w.get('Inventory', 0)
-                })
+    # --- WHEELS (10 brands in parallel) ---
+    print(f"Pulling {len(WHEEL_BRANDS)} wheel brands (parallel)...", flush=True)
+    results += pull_all('wheels', 'Wheels', WHEEL_BRANDS, 'Wheel', workers=10)
 
     if not results:
         print("No items found. Aborting.")
