@@ -155,28 +155,34 @@ def sync_shopify(agg):
 
     print(f"Shopify variants loaded: {len(shopify_data):,}", flush=True)
 
-    items_to_set = []
-    for sku, node in shopify_data.items():
-        if sku in agg:
-            items_to_set.append({
-                'inventoryItemId': node['inventoryItem']['id'],
-                'locationId': SHOPIFY_LOCATION_ID,
-                'quantity': agg[sku]['Inventory']
-            })
+    matched = [(node, agg[sku]['Inventory']) for sku, node in shopify_data.items() if sku in agg]
 
-    if not items_to_set:
+    if not matched:
         print("No matching SKUs found in Shopify.", flush=True)
         return
 
-    print(f"Syncing {len(items_to_set):,} items to Shopify US Auto Force Birmingham...", flush=True)
+    print(f"Matched {len(matched):,} SKUs. Activating and syncing quantities...", flush=True)
+
+    items_to_set = []
+    for node, qty in matched:
+        inv_item_id = node['inventoryItem']['id']
+        # Activate at location first, then queue for quantity update
+        shopify_graphql_request("""
+            mutation activateInventory($inventoryItemId: ID!, $locationId: ID!) {
+              inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId) {
+                userErrors { field message }
+              }
+            }
+        """, {'inventoryItemId': inv_item_id, 'locationId': SHOPIFY_LOCATION_ID})
+        items_to_set.append({'inventoryItemId': inv_item_id, 'locationId': SHOPIFY_LOCATION_ID, 'quantity': qty})
+
     for i in range(0, len(items_to_set), 100):
         batch = items_to_set[i:i+100]
-        mutation = """
-        mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
-          inventorySetOnHandQuantities(input: $input) { userErrors { message } }
-        }
-        """
-        shopify_graphql_request(mutation, {"input": {"reason": "correction", "setQuantities": batch}})
+        shopify_graphql_request("""
+            mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
+              inventorySetOnHandQuantities(input: $input) { userErrors { message } }
+            }
+        """, {"input": {"reason": "correction", "setQuantities": batch}})
     print("Shopify inventory sync complete.", flush=True)
 
 
