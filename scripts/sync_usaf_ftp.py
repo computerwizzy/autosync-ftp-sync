@@ -48,27 +48,35 @@ WHEEL_BRANDS = [
 
 def fetch(endpoint, params):
     params['key'] = API_KEY
-    for attempt in range(3):
+    for attempt in range(5):
         try:
-            r = requests.get(f"{BASE_URL}/{endpoint}", params=params, timeout=45)
+            r = requests.get(f"{BASE_URL}/{endpoint}", params=params, timeout=60)
             if r.status_code == 200:
-                return r.json()
+                data = r.json()
+                if 'Error' not in data:
+                    return data
         except Exception:
             pass
-        time.sleep(2)
+        time.sleep(3 * (attempt + 1))
     return None
 
 
 def crawl(endpoint, json_key, brand):
     items = []
     offset = 0
+    consecutive_failures = 0
     while True:
         data = fetch(endpoint, {
             'limit': 10, 'offset': offset,
             'f-brand': brand, 'i-inventory': 'true', 'i-price': 'true'
         })
         if not data or json_key not in data or not data[json_key]:
-            break
+            consecutive_failures += 1
+            if consecutive_failures >= 3:
+                break
+            time.sleep(5)
+            continue
+        consecutive_failures = 0
         items.extend(data[json_key])
         if not data.get('MoreItems', False):
             break
