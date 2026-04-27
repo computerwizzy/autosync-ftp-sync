@@ -163,26 +163,16 @@ def sync_shopify(agg):
 
     print(f"Matched {len(matched):,} SKUs. Activating and syncing quantities...", flush=True)
 
-    items_to_set = []
     for node, qty in matched:
         inv_item_id = node['inventoryItem']['id']
-        # Activate at location first, then queue for quantity update
+        # Activate and set quantity in one shot per item
         shopify_graphql_request("""
-            mutation activateInventory($inventoryItemId: ID!, $locationId: ID!) {
-              inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId) {
+            mutation activateAndSet($inventoryItemId: ID!, $locationId: ID!, $quantity: Int!) {
+              inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId, onHandQuantity: $quantity) {
                 userErrors { field message }
               }
             }
-        """, {'inventoryItemId': inv_item_id, 'locationId': SHOPIFY_LOCATION_ID})
-        items_to_set.append({'inventoryItemId': inv_item_id, 'locationId': SHOPIFY_LOCATION_ID, 'quantity': qty})
-
-    for i in range(0, len(items_to_set), 100):
-        batch = items_to_set[i:i+100]
-        shopify_graphql_request("""
-            mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
-              inventorySetOnHandQuantities(input: $input) { userErrors { message } }
-            }
-        """, {"input": {"reason": "correction", "setQuantities": batch}})
+        """, {'inventoryItemId': inv_item_id, 'locationId': SHOPIFY_LOCATION_ID, 'quantity': qty})
     print("Shopify inventory sync complete.", flush=True)
 
 
