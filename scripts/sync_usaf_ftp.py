@@ -124,8 +124,8 @@ def shopify_graphql_request(query, variables=None):
                     time.sleep(2)
                 return data
         except Exception as e:
-            print(f"Shopify request error: {e}", flush=True)
-            time.sleep(2)
+            print(f"Shopify request error: {e}, retrying...", flush=True)
+            time.sleep(5)
 
 
 def sync_shopify(agg):
