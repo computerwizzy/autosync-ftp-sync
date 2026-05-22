@@ -23,7 +23,12 @@ DST_FILE  = 'US_AutoForce_Inventory.csv'
 
 SHOPIFY_STORE_URL    = os.environ.get('SHOPIFY_STORE_URL')
 SHOPIFY_ACCESS_TOKEN = os.environ.get('SHOPIFY_ACCESS_TOKEN')
-SHOPIFY_LOCATION_ID  = 'gid://shopify/Location/91693121771'  # US Auto Force Birmingham
+SHOPIFY_LOCATION_ID  = 'gid://shopify/Location/91693121771'  # US Auto Force
+
+# Southern USAF warehouse IDs to include
+SOUTHERN_WAREHOUSES = {'4850', '4801', '4803', '4811', '4812', '4810', '4175'}
+# 4850=Birmingham, 4801=Atlanta, 4803=North Atlanta,
+# 4811=Charlotte, 4812=Raleigh, 4810=North Augusta, 4175=Nashville
 
 OUT_FILE = os.path.join(BASE_DIR, 'scripts', 'scratch', DST_FILE)
 
@@ -53,12 +58,20 @@ def process(buf):
         'Inventory': 0
     })
 
-    row_count = 0
+    print(f"Filtering to southern warehouses: {SOUTHERN_WAREHOUSES}", flush=True)
+
+    row_count = skipped = 0
     for row in reader:
         row_count += 1
         pn = row.get('PartNumber', '').strip()
         if not pn:
             continue
+
+        wh_code = str(row.get('WarehouseCode', '')).strip()
+        if wh_code not in SOUTHERN_WAREHOUSES:
+            skipped += 1
+            continue
+
         qty = int(float(row.get('QuantityAvailable', 0) or 0))
         entry = agg[pn]
         if not entry['BrandCode']:
@@ -70,7 +83,7 @@ def process(buf):
             entry['Map']         = row.get('Map', '').strip()
         entry['Inventory'] += qty
 
-    print(f"Processed {row_count:,} rows -> {len(agg):,} unique part numbers.", flush=True)
+    print(f"Processed {row_count:,} rows, skipped {skipped:,} (non-southern) -> {len(agg):,} unique part numbers.", flush=True)
     return agg
 
 
