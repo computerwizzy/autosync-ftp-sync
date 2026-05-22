@@ -25,10 +25,13 @@ SHOPIFY_STORE_URL    = os.environ.get('SHOPIFY_STORE_URL')
 SHOPIFY_ACCESS_TOKEN = os.environ.get('SHOPIFY_ACCESS_TOKEN')
 SHOPIFY_LOCATION_ID  = 'gid://shopify/Location/91693121771'  # US Auto Force
 
-# Southern USAF warehouse IDs to include
+# All southern warehouses (used for SKU discovery)
 SOUTHERN_WAREHOUSES = {'4850', '4801', '4803', '4811', '4812', '4810', '4175'}
 # 4850=Birmingham, 4801=Atlanta, 4803=North Atlanta,
 # 4811=Charlotte, 4812=Raleigh, 4810=North Augusta, 4175=Nashville
+
+# Only count inventory from these — NC warehouses excluded from qty
+QTY_WAREHOUSES = {'4850', '4801', '4803', '4810', '4175'}
 
 OUT_FILE = os.path.join(BASE_DIR, 'scripts', 'scratch', DST_FILE)
 
@@ -58,7 +61,8 @@ def process(buf):
         'Inventory': 0
     })
 
-    print(f"Filtering to southern warehouses: {SOUTHERN_WAREHOUSES}", flush=True)
+    print(f"Southern warehouses (SKU discovery): {SOUTHERN_WAREHOUSES}", flush=True)
+    print(f"Qty-counting warehouses (NC excluded): {QTY_WAREHOUSES}", flush=True)
 
     row_count = skipped = 0
     for row in reader:
@@ -72,7 +76,9 @@ def process(buf):
             skipped += 1
             continue
 
-        qty = int(float(row.get('QuantityAvailable', 0) or 0))
+        # Only add qty if warehouse counts toward inventory
+        qty = int(float(row.get('QuantityAvailable', 0) or 0)) if wh_code in QTY_WAREHOUSES else 0
+
         entry = agg[pn]
         if not entry['BrandCode']:
             entry['BrandCode']   = row.get('BrandCode', '').strip()
@@ -83,7 +89,8 @@ def process(buf):
             entry['Map']         = row.get('Map', '').strip()
         entry['Inventory'] += qty
 
-    print(f"Processed {row_count:,} rows, skipped {skipped:,} (non-southern) -> {len(agg):,} unique part numbers.", flush=True)
+    nc_only = sum(1 for v in agg.values() if v['Inventory'] == 0)
+    print(f"Processed {row_count:,} rows, skipped {skipped:,} (non-southern) -> {len(agg):,} unique part numbers ({nc_only:,} NC-only at qty 0).", flush=True)
     return agg
 
 
@@ -195,7 +202,7 @@ def main():
         print("ERROR: Missing FTP credentials in .env")
         return
 
-    print("=== US Auto Force FTP -> FTP + Shopify Sync ===", flush=True)
+    print("=== US Auto Force FTP -> FTP Sync (southern warehouses) ===", flush=True)
     buf = download_usaf_csv()
     agg = process(buf)
 
@@ -205,7 +212,6 @@ def main():
 
     write_csv(agg)
     upload_csv()
-    sync_shopify(agg)
     print("All done.", flush=True)
 
 
